@@ -1,0 +1,18 @@
+{
+  "codigo": "crm",
+  "nome": "CRM",
+  "grupo": "Grupo 6 — CRM",
+  "icone": "kanban",
+  "urlFrontend": "/modulos/crm/",
+  "prefixoApi": "/api/crm",
+  "permissaoMenu": "crm.acessar",
+  "ordemMenu": 20,
+  "healthcheck": "/api/crm/health",
+  "itensSubmenu": [
+    { "rota": "/empresas", "nome": "Empresas", "permissao": "crm.empresa.ver_resumo" },
+    { "rota": "/contatos", "nome": "Contatos", "permissao": "crm.contato.ver" },
+    { "rota": "/funil", "nome": "Funil de Vendas", "permissao": "crm.oportunidade.ver" },
+    { "rota": "/oportunidades", "nome": "Oportunidades", "permissao": "crm.oportunidade.ver" },
+    { "rota": "/prospeccao", "nome": "Prospecção", "permissao": "crm.prospeccao.ver" }
+  ]
+}

@@ -1,0 +1,541 @@
+openapi: 3.1.0
+info:
+  title: CRM
+  version: 0.1.0
+  summary: Contrato do módulo CRM — dono de empresas, contatos e unidades para todo o sistema.
+  description: |
+    Cobre os endpoints de Empresas e Contatos fechados no Contrato de Integração §10.
+    Oportunidades, Funil e Propostas entram em versões seguintes, conforme forem implementados.
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://crm:8082
+    description: Direto, entre serviços
+tags:
+  - name: empresas
+    description: Cadastro-mestre de empresas, contatos e unidades
+  - name: saude
+    description: Estado do serviço
+
+security:
+  - bearerJwt: []
+
+paths:
+  /api/crm/empresas:
+    get:
+      tags: [empresas]
+      operationId: listarEmpresas
+      summary: Listar empresas do tenant
+      description: Exige `crm.empresa.ver_resumo`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: segmento
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [lead, prospect, cliente_ativo, inativo] }
+      responses:
+        '200':
+          description: Página de empresas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Empresa' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [empresas]
+      operationId: criarEmpresa
+      summary: Criar empresa
+      description: |
+        Exige `crm.empresa.criar`. Liberado a qualquer módulo (Contrato §10.2) — informar
+        `origem` e `origemModuloId` para rastreio. CNPJ já existente responde 409 com o id
+        existente em `data.empresaId`; o chamador reaproveita esse id em vez de tratar como erro.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaEmpresa' }
+      responses:
+        '201':
+          description: Empresa criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/empresas/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Empresa' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409':
+          description: CNPJ já cadastrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example:
+                success: false
+                data: { empresaId: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+                message: Já existe empresa com este CNPJ.
+                errors:
+                  - { campo: cnpj, codigo: EMPRESA_DUPLICADA, detalhe: CNPJ já cadastrado para este tenant. }
+
+  /api/crm/empresas/busca:
+    get:
+      tags: [empresas]
+      operationId: buscarEmpresas
+      summary: Busca textual, para a busca global da casca
+      description: Exige `crm.empresa.ver_resumo`. Devolve no máximo 5 resultados.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+      responses:
+        '200':
+          description: Resultados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/EmpresaResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/crm/empresas/resumo:
+    get:
+      tags: [empresas]
+      operationId: resumoEmLote
+      summary: Resumo de várias empresas de uma vez
+      description: Exige `crm.empresa.ver_resumo`. Máximo 100 ids por chamada (Contrato §9.4).
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string, format: uuid }, maxItems: 100 }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Resumos encontrados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/EmpresaResumo' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/crm/empresas/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [empresas]
+      operationId: verEmpresa
+      summary: Cadastro completo da empresa
+      description: Exige `crm.empresa.ver`. Empresa de outro tenant responde 404.
+      responses:
+        '200':
+          description: Empresa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Empresa' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [empresas]
+      operationId: editarEmpresa
+      summary: Editar empresa
+      description: Exige `crm.empresa.editar`. Somente o CRM chama este endpoint (Contrato §10.2).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaEmpresa' }
+      responses:
+        '200':
+          description: Empresa atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Empresa' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/empresas/{id}/resumo:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [empresas]
+      operationId: resumoEmpresa
+      summary: Razão social, CNPJ e cidade
+      description: Exige `crm.empresa.ver_resumo` — permissão fraca, padrão de todo perfil operacional.
+      responses:
+        '200':
+          description: Resumo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/EmpresaResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/empresas/{id}/contatos:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [empresas]
+      operationId: contatosDaEmpresa
+      summary: Contatos vinculados à empresa
+      description: Exige `crm.contato.ver`.
+      responses:
+        '200':
+          description: Lista de contatos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Contato' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/empresas/{id}/unidades:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [empresas]
+      operationId: unidadesDaEmpresa
+      summary: Matriz e filiais
+      description: Exige `crm.empresa.ver`.
+      responses:
+        '200':
+          description: Lista de unidades
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Unidade' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/contatos:
+    post:
+      tags: [empresas]
+      operationId: criarContato
+      summary: Criar contato
+      description: Exige `crm.contato.criar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoContato' }
+      responses:
+        '201':
+          description: Contato criado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contato' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/crm/contatos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [empresas]
+      operationId: verContato
+      summary: Cadastro completo do contato
+      description: Exige `crm.contato.ver`.
+      responses:
+        '200':
+          description: Contato
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contato' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [empresas]
+      operationId: editarContato
+      summary: Editar contato
+      description: Exige `crm.contato.editar`. Somente o CRM chama este endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoContato' }
+      responses:
+        '200':
+          description: Contato atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contato' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/contatos/{id}/resumo:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [empresas]
+      operationId: resumoContato
+      summary: Nome, cargo, e-mail e telefone
+      description: Exige `crm.contato.ver`.
+      responses:
+        '200':
+          description: Resumo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ContatoResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar a empresa.
+            errors:
+              - { campo: razaoSocial, codigo: CAMPO_OBRIGATORIO, detalhe: Informe a razão social. }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 1 }
+
+    NovaEmpresa:
+      type: object
+      required: [razaoSocial, origem, origemModuloId]
+      properties:
+        razaoSocial: { type: string, minLength: 1, maxLength: 255, example: Centinela Soluções Digitais }
+        nomeFantasia: { type: [string, 'null'], maxLength: 255 }
+        cnpj: { type: [string, 'null'], pattern: '^[0-9]{14}$', example: '28954678000122' }
+        segmento: { type: [string, 'null'] }
+        porte: { type: [string, 'null'] }
+        cidade: { type: [string, 'null'] }
+        estado: { type: [string, 'null'], minLength: 2, maxLength: 2 }
+        origem: { type: string, example: landing, description: Módulo ou canal que originou o cadastro }
+        origemModuloId: { type: string, example: form-abc123, description: Identificador na origem (Contrato §10.3) }
+
+    Empresa:
+      allOf:
+        - $ref: '#/components/schemas/NovaEmpresa'
+        - type: object
+          required: [id, statusComercial, criadoEm]
+          properties:
+            id: { type: string, format: uuid }
+            vendedorResponsavel: { type: [string, 'null'], format: uuid }
+            statusComercial: { type: string, enum: [lead, prospect, cliente_ativo, inativo] }
+            criadoEm: { type: string, format: date-time }
+
+    EmpresaResumo:
+      type: object
+      required: [id, razaoSocial]
+      properties:
+        id: { type: string, format: uuid }
+        razaoSocial: { type: string }
+        cnpj: { type: [string, 'null'] }
+        cidade: { type: [string, 'null'] }
+
+    Unidade:
+      type: object
+      required: [id, empresaId, tipo]
+      properties:
+        id: { type: string, format: uuid }
+        empresaId: { type: string, format: uuid }
+        tipo: { type: string, enum: [matriz, filial, loja, escritorio] }
+        endereco: { type: [string, 'null'] }
+
+    NovoContato:
+      type: object
+      required: [empresaId, nome]
+      properties:
+        empresaId: { type: string, format: uuid }
+        nome: { type: string, minLength: 1, maxLength: 255 }
+        cargo: { type: [string, 'null'], maxLength: 100 }
+        email: { type: [string, 'null'], format: email }
+        telefone: { type: [string, 'null'] }
+        papel: { type: [string, 'null'], enum: [decisor, influenciador, tecnico, financeiro, proprietario, outro] }
+        consentimentoLgpd: { type: [string, 'null'], enum: [concedido, pendente, revogado] }
+        preferenciaComunicacao: { type: [string, 'null'], enum: [telefone, whatsapp, email] }
+
+    Contato:
+      allOf:
+        - $ref: '#/components/schemas/NovoContato'
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string, format: uuid }
+
+    ContatoResumo:
+      type: object
+      required: [id, nome]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        cargo: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        telefone: { type: [string, 'null'] }
