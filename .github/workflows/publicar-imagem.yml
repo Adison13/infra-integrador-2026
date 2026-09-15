@@ -1,0 +1,59 @@
+# Workflow reutilizável: publica a imagem Docker no GitHub Container Registry da conta dona do
+# repositório que chamou, com as tags :latest (na branch principal) e :sha-{commit} (Contrato §14.3).
+#
+# Uso, no repositório do módulo:
+#   jobs:
+#     publicar:
+#       permissions: { contents: read, packages: write }
+#       uses: karolAlbuquerque/infra-integrador-2026/.github/workflows/publicar-imagem.yml@main
+#       with:
+#         imagem: crm
+#         contexto: api
+name: Publicar imagem
+
+on:
+  workflow_call:
+    inputs:
+      imagem:
+        description: Nome da imagem, ex. crm ou crm-front
+        required: true
+        type: string
+      contexto:
+        description: Pasta com o Dockerfile
+        required: false
+        type: string
+        default: .
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nome da imagem em minúsculas
+        id: nome
+        run: echo "imagem=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ inputs.imagem }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.nome.outputs.imagem }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.contexto }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

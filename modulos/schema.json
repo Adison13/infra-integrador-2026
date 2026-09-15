@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/karolAlbuquerque/infra-integrador-2026/modulos/schema.json",
+  "title": "Registro de módulo",
+  "description": "Contrato de Integração §11. A casca monta o menu a partir destes registros, sem recompilar.",
+  "type": "object",
+  "required": ["codigo", "nome", "grupo", "icone", "urlFrontend", "prefixoApi", "permissaoMenu", "ordemMenu", "healthcheck", "itensSubmenu"],
+  "additionalProperties": false,
+  "properties": {
+    "codigo": {
+      "type": "string",
+      "pattern": "^[a-z]+$",
+      "description": "Código do módulo; nunca muda depois de escolhido"
+    },
+    "nome": { "type": "string", "minLength": 2, "maxLength": 30 },
+    "grupo": { "type": "string" },
+    "icone": {
+      "type": "string",
+      "description": "Nome de ícone do lucide.dev, em kebab-case",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "urlFrontend": {
+      "type": "string",
+      "pattern": "^/modulos/[a-z]+/$",
+      "description": "Caminho na mesma origem da casca (Contrato §12.8)"
+    },
+    "prefixoApi": { "type": "string", "pattern": "^/api/[a-z]+$" },
+    "permissaoMenu": { "type": "string", "pattern": "^[a-z]+\\.acessar$" },
+    "ordemMenu": { "type": "integer", "minimum": 1, "maximum": 999 },
+    "healthcheck": { "type": "string", "pattern": "^/api/[a-z]+/health$" },
+    "itensSubmenu": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rota", "nome", "permissao"],
+        "additionalProperties": false,
+        "properties": {
+          "rota": { "type": "string", "pattern": "^/[a-z0-9/-]*$" },
+          "nome": { "type": "string", "minLength": 2, "maxLength": 40 },
+          "permissao": { "type": "string", "pattern": "^[a-z]+\\.(acessar|[a-z_]+\\.[a-z_]+)$" }
+        }
+      }
+    }
+  }
+}

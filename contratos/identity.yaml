@@ -1,0 +1,496 @@
+openapi: 3.1.0
+info:
+  title: Identity — Plataforma e Controle de Usuários
+  version: 0.1.0
+  summary: Endpoints do serviço de identidade consumidos pela casca e pelos outros módulos.
+  description: |
+    Contrato da onda 1 do Grupo 2. As regras gerais estão no Contrato de Integração v0.6:
+    autenticação (§4), autorização e equipes (§5), API (§8) e comunicação entre módulos (§9).
+
+    Toda resposta usa o envelope `{ success, data, message, errors }`, com uma exceção:
+    o JWKS segue o formato padrão da RFC 7517, para que o Spring o leia sem configuração.
+
+    Este serviço **não** pode ser substituído por stub gerado deste arquivo: um JWT de
+    exemplo não tem assinatura válida. Em desenvolvimento, use a imagem real do identity com
+    os usuários de `docs/usuarios-de-teste.md`.
+  contact:
+    name: Grupo 2 — Plataforma e Controle de Usuários
+    url: https://github.com/karolAlbuquerque/plataforma-integrador-2026-2
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Navegador, pelo gateway, em desenvolvimento
+  - url: http://identity:8081
+    description: Outro serviço, direto pela rede do Docker
+tags:
+  - name: autenticacao
+    description: Login, renovação e encerramento de sessão
+  - name: servico
+    description: Token para rotinas sem usuário
+  - name: chaves
+    description: Chave pública para validar o JWT
+  - name: plataforma
+    description: Registro de módulos, equipes e timeline
+  - name: saude
+    description: Estado do serviço
+
+paths:
+  /api/identity/auth/login:
+    post:
+      tags: [autenticacao]
+      operationId: entrar
+      summary: Entrar com e-mail e senha
+      description: |
+        Devolve o access token no corpo e grava o refresh token num cookie `HttpOnly`,
+        `Secure` e `SameSite=Strict`, restrito a `/api/identity/auth`. Credencial inválida,
+        usuário inativo e e-mail inexistente respondem todos 401 com a mesma mensagem.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credenciais' }
+      responses:
+        '200':
+          description: Sessão aberta
+          headers:
+            Set-Cookie:
+              description: Refresh token, válido por 8 horas
+              schema: { type: string, example: 'refresh_token=d41f8c...; HttpOnly; Secure; SameSite=Strict; Path=/api/identity/auth; Max-Age=28800' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SessaoAberta' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '429': { $ref: '#/components/responses/MuitasTentativas' }
+
+  /api/identity/auth/refresh:
+    post:
+      tags: [autenticacao]
+      operationId: renovarSessao
+      summary: Trocar o refresh token por um novo access token
+      description: O navegador envia o cookie sozinho. O refresh usado é revogado e um novo cookie é gravado.
+      security:
+        - cookieRefresh: []
+      responses:
+        '200':
+          description: Sessão renovada
+          headers:
+            Set-Cookie:
+              description: Novo refresh token
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SessaoAberta' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/auth/logout:
+    post:
+      tags: [autenticacao]
+      operationId: sair
+      summary: Encerrar a sessão
+      description: Revoga o refresh token desta sessão, ou de todas, e apaga o cookie.
+      security:
+        - cookieRefresh: []
+      parameters:
+        - name: todas
+          in: query
+          description: Encerrar todas as sessões do usuário
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Sessão encerrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+  /api/identity/auth/me:
+    get:
+      tags: [autenticacao]
+      operationId: quemSouEu
+      summary: Usuário, tenant, perfis, permissões e equipes do token atual
+      responses:
+        '200':
+          description: Dados da sessão
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Eu' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/auth/token-servico:
+    post:
+      tags: [servico]
+      operationId: emitirTokenDeServico
+      summary: Emitir token para rotina sem usuário
+      description: |
+        O token tem `sub = svc:{modulo}` e não carrega `tenant_id`. Nas chamadas feitas com ele,
+        o tenant vai no cabeçalho `X-Tenant-Id` (Contrato §9.2). Emissão e uso são auditados.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CredencialDeServico' }
+      responses:
+        '200':
+          description: Token emitido
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/TokenDeServico' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/.well-known/jwks.json:
+    get:
+      tags: [chaves]
+      operationId: chavesPublicas
+      summary: Chave pública para validar o JWT (RFC 7517, sem envelope)
+      security: []
+      responses:
+        '200':
+          description: Conjunto de chaves
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Jwks' }
+
+  /api/identity/modulos:
+    get:
+      tags: [plataforma]
+      operationId: listarModulosDoMenu
+      summary: Módulos e submenus que o usuário atual pode ver
+      description: Já filtrado pela `permissaoMenu` de cada módulo e pela permissão de cada item (Contrato §11).
+      responses:
+        '200':
+          description: Menu do usuário
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ModuloDoMenu' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/equipes/{id}/membros:
+    get:
+      tags: [plataforma]
+      operationId: listarMembrosDaEquipe
+      summary: Membros de uma equipe, para escolher responsável
+      description: Exige `identity.equipe.ver_resumo`. Equipe de outro tenant responde 404 (Contrato §5.4).
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Membros
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/MembroDeEquipe' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/identity/eventos:
+    get:
+      tags: [plataforma]
+      operationId: listarTimelineDaEmpresa
+      summary: Timeline de uma empresa, do fato mais recente para o mais antigo
+      description: |
+        Os registros chegam pela mensagem `identity.timeline.registrar` (ver identity.asyncapi.yaml).
+        Exige `identity.timeline.ver`.
+      parameters:
+        - name: empresaId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página da timeline
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/EventoDaTimeline' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/identity/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespostaDeSaude' }
+        '503':
+          description: Indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+security:
+  - bearerJwt: []
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token RS256, de 15 minutos, emitido por este serviço.
+    cookieRefresh:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+
+  parameters:
+    IdNoCaminho:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido; `errors` detalha campo a campo
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível entrar.
+            errors:
+              - { campo: email, codigo: CAMPO_OBRIGATORIO, detalhe: Informe o e-mail. }
+    NaoAutenticado:
+      description: Sem token, token inválido, expirado ou credencial recusada
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { success: false, data: null, message: E-mail ou senha incorretos., errors: [] }
+    SemPermissao:
+      description: Autenticado, mas sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { success: false, data: null, message: Sem permissão para esta operação., errors: [] }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { success: false, data: null, message: Registro não encontrado., errors: [] }
+    MuitasTentativas:
+      description: Cinco falhas em quinze minutos, por e-mail ou por IP
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { success: false, data: null, message: Muitas tentativas. Aguarde 15 minutos., errors: [] }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/ErroDeCampo' }
+
+    ErroDeCampo:
+      type: object
+      required: [campo, codigo, detalhe]
+      properties:
+        campo: { type: string, example: email }
+        codigo: { type: string, example: CAMPO_OBRIGATORIO }
+        detalhe: { type: string, example: Informe o e-mail. }
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 137 }
+
+    Credenciais:
+      type: object
+      required: [email, senha]
+      properties:
+        email: { type: string, format: email, example: vendedor@empresa-a.dev }
+        senha: { type: string, format: password, minLength: 8, example: Plataforma2026 }
+
+    Usuario:
+      type: object
+      required: [id, nome, email, tenantId]
+      properties:
+        id: { type: string, format: uuid, example: 9f1c4e2a-6b1d-4c1e-9a55-2d3e4f5a6b7c }
+        nome: { type: string, example: Vendedor da Empresa A }
+        email: { type: string, format: email, example: vendedor@empresa-a.dev }
+        tenantId: { type: string, format: uuid, example: a0000000-0000-4000-8000-00000000000a }
+
+    SessaoAberta:
+      type: object
+      required: [accessToken, expiraEmSegundos, usuario]
+      properties:
+        accessToken: { type: string, example: eyJhbGciOiJSUzI1NiIsImtpZCI6ImRldi0yMDI2In0... }
+        expiraEmSegundos: { type: integer, example: 900 }
+        usuario: { $ref: '#/components/schemas/Usuario' }
+
+    Eu:
+      type: object
+      required: [usuario, tenant, perfis, permissoes, equipes]
+      properties:
+        usuario: { $ref: '#/components/schemas/Usuario' }
+        tenant:
+          type: object
+          required: [id, nome]
+          properties:
+            id: { type: string, format: uuid }
+            nome: { type: string, example: Empresa A }
+        perfis:
+          type: array
+          items: { type: string }
+          example: [VENDEDOR]
+        permissoes:
+          type: array
+          items: { type: string, pattern: '^[a-z]+\.[a-z_]+\.[a-z_]+$|^[a-z]+\.acessar$' }
+          example: [crm.acessar, crm.oportunidade.ver, crm.empresa.ver_resumo]
+        equipes:
+          type: array
+          items: { type: string, format: uuid }
+
+    CredencialDeServico:
+      type: object
+      required: [clientId, clientSecret]
+      properties:
+        clientId: { type: string, example: financeiro }
+        clientSecret: { type: string, format: password }
+
+    TokenDeServico:
+      type: object
+      required: [accessToken, expiresIn]
+      properties:
+        accessToken: { type: string }
+        expiresIn: { type: integer, example: 900 }
+
+    Jwks:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, kid, use, alg, n, e]
+            properties:
+              kty: { type: string, example: RSA }
+              kid: { type: string, example: dev-2026 }
+              use: { type: string, example: sig }
+              alg: { type: string, example: RS256 }
+              n: { type: string }
+              e: { type: string, example: AQAB }
+
+    ModuloDoMenu:
+      type: object
+      required: [codigo, nome, urlFrontend, prefixoApi, ordemMenu, disponivel, itensSubmenu]
+      properties:
+        codigo: { type: string, example: crm }
+        nome: { type: string, example: CRM }
+        icone: { type: string, example: kanban }
+        urlFrontend: { type: string, example: /modulos/crm/ }
+        prefixoApi: { type: string, example: /api/crm }
+        ordemMenu: { type: integer, example: 20 }
+        disponivel:
+          type: boolean
+          description: Resultado do último healthcheck
+        itensSubmenu:
+          type: array
+          items:
+            type: object
+            required: [rota, nome]
+            properties:
+              rota: { type: string, example: /funil }
+              nome: { type: string, example: Funil }
+
+    MembroDeEquipe:
+      type: object
+      required: [id, nome, lider]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, example: Vendedor da Empresa A }
+        lider: { type: boolean, example: false }
+
+    EventoDaTimeline:
+      type: object
+      required: [id, tipo, moduloOrigem, texto, ocorridoEm]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string, example: contratos.contrato.assinado }
+        moduloOrigem: { type: string, example: contratos }
+        texto: { type: string, example: Contrato CT-0042 assinado por Maria Souza }
+        rota: { type: [string, 'null'], example: /modulos/contratos/contratos/7b1e }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        ocorridoEm: { type: string, format: date-time }
+
+    RespostaDeSaude:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            status: { type: string, example: UP }
+        message: { type: [string, 'null'] }
+        errors: { type: array, items: {} }

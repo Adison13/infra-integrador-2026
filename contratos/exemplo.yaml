@@ -1,0 +1,232 @@
+openapi: 3.1.0
+info:
+  title: Exemplo — módulo modelo
+  version: 0.1.0
+  summary: Contrato do módulo de exemplo. Copie este arquivo como ponto de partida do seu.
+  description: |
+    Mostra o formato esperado de um contrato de módulo: rotas sob `/api/{modulo}`, envelope
+    em toda resposta, listagem paginada, códigos da §8.4 e exemplos que o Prism usa para o stub.
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://exemplo:8090
+    description: Direto, entre serviços
+tags:
+  - name: itens
+    description: Cadastro de itens de exemplo
+  - name: saude
+    description: Estado do serviço
+
+security:
+  - bearerJwt: []
+
+paths:
+  /api/exemplo/itens:
+    get:
+      tags: [itens]
+      operationId: listarItens
+      summary: Listar itens do tenant
+      description: Exige `exemplo.item.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: ordenar
+          in: query
+          description: Campo e direção
+          schema:
+            type: string
+            enum: ['criadoEm,desc', 'criadoEm,asc', 'nome,asc', 'nome,desc']
+            default: 'criadoEm,desc'
+      responses:
+        '200':
+          description: Página de itens
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Item' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [itens]
+      operationId: criarItem
+      summary: Criar item
+      description: Exige `exemplo.item.criar`. Publica `exemplo.item.criado` depois do commit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoItem' }
+      responses:
+        '201':
+          description: Item criado
+          headers:
+            Location:
+              schema: { type: string, example: /api/exemplo/itens/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/exemplo/itens/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [itens]
+      operationId: verItem
+      summary: Ver um item
+      description: Exige `exemplo.item.ver`. Item de outro tenant responde 404.
+      responses:
+        '200':
+          description: Item
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Item' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [itens]
+      operationId: excluirItem
+      summary: Excluir um item (soft delete)
+      description: Exige `exemplo.item.excluir`.
+      responses:
+        '200':
+          description: Item excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/exemplo/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar o item.
+            errors:
+              - { campo: nome, codigo: CAMPO_INVALIDO, detalhe: Informe o nome. }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 1 }
+
+    NovoItem:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 200, example: Primeiro item }
+        descricao: { type: [string, 'null'], maxLength: 2000, example: Criado para testar o módulo. }
+
+    Item:
+      type: object
+      required: [id, nome, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        nome: { type: string, example: Primeiro item }
+        descricao: { type: [string, 'null'], example: Criado para testar o módulo. }
+        criadoEm: { type: string, format: date-time, example: '2026-09-15T13:02:11Z' }

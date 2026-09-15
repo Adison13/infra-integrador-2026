@@ -1,0 +1,194 @@
+asyncapi: 3.0.0
+info:
+  title: Identity — mensagens recebidas pela plataforma
+  version: 0.1.0
+  description: |
+    Pedidos que qualquer módulo publica na exchange `identity.entrada` para registrar na
+    timeline, notificar um usuário ou enviar e-mail (Contrato de Integração §9.7).
+
+    Toda mensagem usa o envelope padrão. O identity é consumidor idempotente: a mesma
+    mensagem entregue duas vezes produz um único efeito. Depois de três falhas, a mensagem
+    vai para a fila `.dlq` correspondente.
+
+    Na onda 1, o identity não publica eventos próprios.
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do docker-compose do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  entrada:
+    address: identity.entrada
+    description: Exchange topic onde todos os módulos podem publicar pedidos à plataforma.
+    messages:
+      timelineRegistrar:
+        $ref: '#/components/messages/TimelineRegistrar'
+      notificacaoCriar:
+        $ref: '#/components/messages/NotificacaoCriar'
+      emailEnviar:
+        $ref: '#/components/messages/EmailEnviar'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: identity.entrada
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  receberRegistroDeTimeline:
+    action: receive
+    summary: Registrar um fato na timeline de uma empresa
+    channel:
+      $ref: '#/channels/entrada'
+    messages:
+      - $ref: '#/channels/entrada/messages/timelineRegistrar'
+  receberPedidoDeNotificacao:
+    action: receive
+    summary: Criar uma notificação para um usuário
+    channel:
+      $ref: '#/channels/entrada'
+    messages:
+      - $ref: '#/channels/entrada/messages/notificacaoCriar'
+  receberPedidoDeEmail:
+    action: receive
+    summary: Enviar um e-mail de sistema
+    channel:
+      $ref: '#/channels/entrada'
+    messages:
+      - $ref: '#/channels/entrada/messages/emailEnviar'
+
+components:
+  messages:
+    TimelineRegistrar:
+      name: identity.timeline.registrar
+      title: Registrar na timeline
+      summary: O texto chega pronto para exibição; a plataforma não consulta outros módulos.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: identity.timeline.registrar }
+              dados: { $ref: '#/components/schemas/DadosTimeline' }
+
+    NotificacaoCriar:
+      name: identity.notificacao.criar
+      title: Criar notificação
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: identity.notificacao.criar }
+              dados: { $ref: '#/components/schemas/DadosNotificacao' }
+
+    EmailEnviar:
+      name: identity.email.enviar
+      title: Enviar e-mail de sistema
+      summary: Só e-mail transacional. Campanhas e listas são do módulo Marketing.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: identity.email.enviar }
+              dados: { $ref: '#/components/schemas/DadosEmail' }
+
+  schemas:
+    Envelope:
+      type: object
+      description: Envelope comum a toda mensagem do sistema (Contrato §9.7).
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Chave de idempotência
+        tipo:
+          type: string
+          pattern: '^[a-z]+\.[a-z_-]+\.[a-z_]+$'
+        versao:
+          type: integer
+          minimum: 1
+        tenantId:
+          type: string
+          format: uuid
+        moduloOrigem:
+          type: string
+          examples: [contratos]
+        ocorridoEm:
+          type: string
+          format: date-time
+        usuarioId:
+          type: [string, 'null']
+          format: uuid
+        correlacaoId:
+          type: [string, 'null']
+          description: X-Request-Id da requisição que originou o fato
+        dados:
+          type: object
+
+    DadosTimeline:
+      type: object
+      required: [empresaId, tipoDoFato, texto]
+      properties:
+        empresaId:
+          type: string
+          format: uuid
+          description: Referência a crm.empresas, sem chave estrangeira
+        tipoDoFato:
+          type: string
+          description: Tipo do evento original que gerou o registro
+          examples: [contratos.contrato.assinado]
+        texto:
+          type: string
+          maxLength: 500
+          examples: [Contrato CT-0042 assinado por Maria Souza]
+        rota:
+          type: [string, 'null']
+          description: Para onde a casca navega ao clicar
+          examples: [/modulos/contratos/contratos/7b1e]
+
+    DadosNotificacao:
+      type: object
+      required: [usuarioId, categoria, titulo]
+      properties:
+        usuarioId:
+          type: string
+          format: uuid
+        categoria:
+          type: string
+          enum: [TAREFA_VENCIDA, REUNIAO, PROPOSTA_ABERTA, PROPOSTA_EXPIRANDO, CONTRATO_ASSINADO,
+                 COBRANCA_PAGA, COBRANCA_VENCIDA, NOVA_INDICACAO, NOVO_LEAD, CHAMADO,
+                 LICENCA_A_VENCER, RENOVACAO]
+        titulo:
+          type: string
+          maxLength: 120
+        texto:
+          type: [string, 'null']
+          maxLength: 500
+        rota:
+          type: [string, 'null']
+
+    DadosEmail:
+      type: object
+      required: [para, modelo, variaveis]
+      properties:
+        para:
+          type: string
+          format: email
+        modelo:
+          type: string
+          description: Nome do modelo cadastrado na plataforma
+          examples: [cobranca-vencida]
+        variaveis:
+          type: object
+          additionalProperties: { type: string }

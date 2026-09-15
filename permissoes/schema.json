@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/karolAlbuquerque/infra-integrador-2026/permissoes/schema.json",
+  "title": "Lista de permissões de um módulo",
+  "description": "Contrato de Integração §5.1. O identity carrega estas listas no catálogo global de permissões.",
+  "type": "object",
+  "required": ["modulo", "permissoes"],
+  "additionalProperties": false,
+  "properties": {
+    "modulo": {
+      "type": "string",
+      "pattern": "^[a-z]+$"
+    },
+    "permissoes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["codigo", "descricao"],
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "description": "modulo.recurso.acao, ou modulo.acessar para aparecer no menu",
+            "pattern": "^[a-z]+\\.(acessar|[a-z_]+\\.[a-z_]+)$"
+          },
+          "descricao": {
+            "type": "string",
+            "minLength": 5,
+            "description": "Texto exibido na tela de montagem de perfis"
+          },
+          "perfisPadrao": {
+            "type": "array",
+            "description": "Perfis que recebem esta permissão quando um tenant é criado",
+            "uniqueItems": true,
+            "items": {
+              "enum": ["ADMINISTRADOR", "GESTOR", "VENDEDOR", "PRE_VENDAS", "FINANCEIRO",
+                       "TECNICO", "CONTABILIDADE", "MARKETING", "PARCEIRO", "CLIENTE"]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+# Valida tudo o que é compartilhado antes de entrar na main.
+name: Validar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose-e-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker-compose.yml com todos os perfis
+        run: |
+          cp .env.example .env
+          docker compose --profile plataforma --profile modulos --profile exemplo config --quiet
+      - name: Scripts de shell
+        run: shellcheck db/init/*.sh rabbitmq/*.sh scripts/*.sh
+      - name: Tema do exemplo igual ao compartilhado
+        run: diff -u ui/plataforma.css exemplo-modulo/front/src/tema/plataforma.css
+
+  contratos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: OpenAPI
+        run: |
+          arquivos=$(ls contratos/*.yaml | grep -v '\.asyncapi\.yaml$')
+          npx --yes @redocly/cli@1 lint $arquivos
+      - name: AsyncAPI
+        run: |
+          for arquivo in contratos/*.asyncapi.yaml; do
+            npx --yes @asyncapi/cli@3 validate "$arquivo"
+          done
+      - name: Registros de módulo e listas de permissões
+        run: |
+          registros=$(ls modulos/*.json | grep -v 'schema\.json$')
+          for arquivo in $registros; do
+            npx --yes ajv-cli@5 validate -s modulos/schema.json -d "$arquivo"
+          done
+          for arquivo in permissoes/*.yaml; do
+            npx --yes ajv-cli@5 validate -s permissoes/schema.json -d "$arquivo"
+          done
+
+  exemplo-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - working-directory: exemplo-modulo/api
+        run: mvn -B verify
+
+  exemplo-front:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: exemplo-modulo/front/package-lock.json
+      - working-directory: exemplo-modulo/front
+        run: |
+          npm ci
+          npm run build

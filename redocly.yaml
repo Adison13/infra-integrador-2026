@@ -1,0 +1,9 @@
+# Configuração do linter de OpenAPI usado no workflow Validar.
+extends:
+  - recommended
+
+rules:
+  # Os contratos descrevem ambientes locais e a rede do Docker de propósito.
+  no-server-example.com: off
+  # /health é público e só responde 200 ou 503.
+  operation-4xx-response: off

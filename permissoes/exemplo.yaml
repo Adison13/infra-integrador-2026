@@ -1,0 +1,17 @@
+# Permissões do módulo de exemplo. Copie como permissoes/{modulo}.yaml.
+# Formato: modulo.recurso.acao, em minúsculas (Contrato §5.1). Ações possíveis:
+# ver, criar, editar, excluir, exportar, aprovar, administrar, compartilhar.
+modulo: exemplo
+permissoes:
+  - codigo: exemplo.acessar
+    descricao: Ver o módulo de exemplo no menu
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+  - codigo: exemplo.item.ver
+    descricao: Ver itens de exemplo
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+  - codigo: exemplo.item.criar
+    descricao: Criar itens de exemplo
+    perfisPadrao: [ADMINISTRADOR]
+  - codigo: exemplo.item.excluir
+    descricao: Excluir itens de exemplo
+    perfisPadrao: [ADMINISTRADOR]

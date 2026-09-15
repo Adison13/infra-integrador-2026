@@ -1,0 +1,359 @@
+# Sistema inteiro da plataforma, em desenvolvimento.
+#
+#   docker compose up -d                          PostgreSQL, RabbitMQ e Mailpit
+#   docker compose --profile plataforma up -d     + identity, gateway e casca (Grupo 2)
+#   docker compose --profile modulos up -d        + os sete módulos, pelas imagens publicadas
+#   docker compose --profile exemplo up -d --build  + o módulo de exemplo, compilado daqui
+#
+# Um serviço cuja imagem ainda não foi publicada falha só ele; os outros sobem normalmente.
+# Portas: Contrato de Integração §13.3.
+
+name: plataforma
+
+x-servico: &servico
+  restart: unless-stopped
+  networks: [plataforma]
+
+x-depende-da-infra: &depende-da-infra
+  postgres:
+    condition: service_healthy
+  rabbitmq-init:
+    condition: service_completed_successfully
+
+# Variáveis que todo back-end de módulo recebe (ver README, "Variáveis dos módulos").
+x-env-modulo: &env-modulo
+  DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: ${RABBITMQ_VHOST}
+  JWKS_URI: http://identity:8081/api/identity/.well-known/jwks.json
+  IDENTITY_BASE_URL: http://identity:8081
+
+services:
+
+  # ------------------------------------------------------------------ infraestrutura
+
+  postgres:
+    <<: *servico
+    image: postgres:16-alpine
+    env_file: .env
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    <<: *servico
+    image: rabbitmq:4.1-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USUARIO}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_SENHA}
+    ports: ["5672:5672", "15672:15672"]
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  rabbitmq-init:
+    image: curlimages/curl:8.11.1
+    networks: [plataforma]
+    env_file: .env
+    entrypoint: ["sh", "/scripts/init.sh"]
+    volumes:
+      - ./rabbitmq/init.sh:/scripts/init.sh:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+
+  mailpit:
+    <<: *servico
+    image: axllent/mailpit:v1.27
+    ports: ["1025:1025", "8025:8025"]
+
+  # ------------------------------------------------------------------ plataforma (Grupo 2)
+
+  identity:
+    <<: *servico
+    profiles: [plataforma]
+    image: ${IMAGEM_IDENTITY}
+    depends_on: *depende-da-infra
+    ports: ["8081:8081"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8081"
+      SPRING_PROFILES_ACTIVE: ${IDENTITY_PERFIL}
+      DB_APP_USER: usr_identity
+      DB_APP_PASSWORD: ${DB_APP_IDENTITY_SENHA}
+      DB_OWNER_USER: own_identity
+      DB_OWNER_PASSWORD: ${DB_OWN_IDENTITY_SENHA}
+      RABBITMQ_USER: mq_identity
+      RABBITMQ_PASSWORD: ${MQ_IDENTITY_SENHA}
+      JWT_CHAVE_PRIVADA: ${IDENTITY_JWT_CHAVE_PRIVADA}
+      JWT_KID: ${IDENTITY_JWT_KID}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SVC_CRM_SEGREDO: ${SVC_CRM_SEGREDO}
+      SVC_PRODUTOS_SEGREDO: ${SVC_PRODUTOS_SEGREDO}
+      SVC_CONTRATOS_SEGREDO: ${SVC_CONTRATOS_SEGREDO}
+      SVC_FINANCEIRO_SEGREDO: ${SVC_FINANCEIRO_SEGREDO}
+      SVC_CHAMADOS_SEGREDO: ${SVC_CHAMADOS_SEGREDO}
+      SVC_MARKETING_SEGREDO: ${SVC_MARKETING_SEGREDO}
+      SVC_LANDING_SEGREDO: ${SVC_LANDING_SEGREDO}
+      SVC_EXEMPLO_SEGREDO: ${SVC_EXEMPLO_SEGREDO}
+
+  gateway:
+    <<: *servico
+    profiles: [plataforma]
+    image: ${IMAGEM_GATEWAY}
+    ports: ["8080:8080"]
+    environment:
+      SERVER_PORT: "8080"
+      JWKS_URI: http://identity:8081/api/identity/.well-known/jwks.json
+      ROTA_CASCA: http://casca:3000
+      ROTA_IDENTITY_API: http://identity:8081
+      ROTA_CRM_API: http://crm:8082
+      ROTA_CRM_FRONT: http://crm-front:3002
+      ROTA_PRODUTOS_API: http://produtos:8083
+      ROTA_PRODUTOS_FRONT: http://produtos-front:3003
+      ROTA_CONTRATOS_API: http://contratos:8084
+      ROTA_CONTRATOS_FRONT: http://contratos-front:3004
+      ROTA_FINANCEIRO_API: http://financeiro:8085
+      ROTA_FINANCEIRO_FRONT: http://financeiro-front:3005
+      ROTA_CHAMADOS_API: http://chamados:8086
+      ROTA_CHAMADOS_FRONT: http://chamados-front:3006
+      ROTA_MARKETING_API: http://marketing:8087
+      ROTA_MARKETING_FRONT: http://marketing-front:3007
+      ROTA_LANDING_API: http://landing:8088
+      ROTA_LANDING_FRONT: http://landing-front:3008
+      ROTA_EXEMPLO_API: http://exemplo:8090
+      ROTA_EXEMPLO_FRONT: http://exemplo-front:3090
+
+  casca:
+    <<: *servico
+    profiles: [plataforma]
+    image: ${IMAGEM_CASCA}
+    ports: ["3000:3000"]
+    environment:
+      PORTA: "3000"
+
+  # ------------------------------------------------------------------ módulos
+
+  crm:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_CRM}
+    depends_on: *depende-da-infra
+    ports: ["8082:8082"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8082"
+      DB_APP_USER: usr_crm
+      DB_APP_PASSWORD: ${DB_APP_CRM_SENHA}
+      DB_OWNER_USER: own_crm
+      DB_OWNER_PASSWORD: ${DB_OWN_CRM_SENHA}
+      RABBITMQ_USER: mq_crm
+      RABBITMQ_PASSWORD: ${MQ_CRM_SENHA}
+      SVC_CLIENT_ID: crm
+      SVC_CLIENT_SECRET: ${SVC_CRM_SEGREDO}
+
+  crm-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_CRM_FRONT}
+    ports: ["3002:3002"]
+    environment: { PORTA: "3002" }
+
+  produtos:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_PRODUTOS}
+    depends_on: *depende-da-infra
+    ports: ["8083:8083"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8083"
+      DB_APP_USER: usr_produtos
+      DB_APP_PASSWORD: ${DB_APP_PRODUTOS_SENHA}
+      DB_OWNER_USER: own_produtos
+      DB_OWNER_PASSWORD: ${DB_OWN_PRODUTOS_SENHA}
+      RABBITMQ_USER: mq_produtos
+      RABBITMQ_PASSWORD: ${MQ_PRODUTOS_SENHA}
+      SVC_CLIENT_ID: produtos
+      SVC_CLIENT_SECRET: ${SVC_PRODUTOS_SEGREDO}
+
+  produtos-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_PRODUTOS_FRONT}
+    ports: ["3003:3003"]
+    environment: { PORTA: "3003" }
+
+  contratos:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_CONTRATOS}
+    depends_on: *depende-da-infra
+    ports: ["8084:8084"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8084"
+      DB_APP_USER: usr_contratos
+      DB_APP_PASSWORD: ${DB_APP_CONTRATOS_SENHA}
+      DB_OWNER_USER: own_contratos
+      DB_OWNER_PASSWORD: ${DB_OWN_CONTRATOS_SENHA}
+      RABBITMQ_USER: mq_contratos
+      RABBITMQ_PASSWORD: ${MQ_CONTRATOS_SENHA}
+      SVC_CLIENT_ID: contratos
+      SVC_CLIENT_SECRET: ${SVC_CONTRATOS_SEGREDO}
+
+  contratos-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_CONTRATOS_FRONT}
+    ports: ["3004:3004"]
+    environment: { PORTA: "3004" }
+
+  financeiro:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_FINANCEIRO}
+    depends_on: *depende-da-infra
+    ports: ["8085:8085"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8085"
+      DB_APP_USER: usr_financeiro
+      DB_APP_PASSWORD: ${DB_APP_FINANCEIRO_SENHA}
+      DB_OWNER_USER: own_financeiro
+      DB_OWNER_PASSWORD: ${DB_OWN_FINANCEIRO_SENHA}
+      RABBITMQ_USER: mq_financeiro
+      RABBITMQ_PASSWORD: ${MQ_FINANCEIRO_SENHA}
+      SVC_CLIENT_ID: financeiro
+      SVC_CLIENT_SECRET: ${SVC_FINANCEIRO_SEGREDO}
+
+  financeiro-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_FINANCEIRO_FRONT}
+    ports: ["3005:3005"]
+    environment: { PORTA: "3005" }
+
+  chamados:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_CHAMADOS}
+    depends_on: *depende-da-infra
+    ports: ["8086:8086"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8086"
+      DB_APP_USER: usr_chamados
+      DB_APP_PASSWORD: ${DB_APP_CHAMADOS_SENHA}
+      DB_OWNER_USER: own_chamados
+      DB_OWNER_PASSWORD: ${DB_OWN_CHAMADOS_SENHA}
+      RABBITMQ_USER: mq_chamados
+      RABBITMQ_PASSWORD: ${MQ_CHAMADOS_SENHA}
+      SVC_CLIENT_ID: chamados
+      SVC_CLIENT_SECRET: ${SVC_CHAMADOS_SEGREDO}
+
+  chamados-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_CHAMADOS_FRONT}
+    ports: ["3006:3006"]
+    environment: { PORTA: "3006" }
+
+  marketing:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_MARKETING}
+    depends_on: *depende-da-infra
+    ports: ["8087:8087"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8087"
+      DB_APP_USER: usr_marketing
+      DB_APP_PASSWORD: ${DB_APP_MARKETING_SENHA}
+      DB_OWNER_USER: own_marketing
+      DB_OWNER_PASSWORD: ${DB_OWN_MARKETING_SENHA}
+      RABBITMQ_USER: mq_marketing
+      RABBITMQ_PASSWORD: ${MQ_MARKETING_SENHA}
+      SVC_CLIENT_ID: marketing
+      SVC_CLIENT_SECRET: ${SVC_MARKETING_SEGREDO}
+
+  marketing-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_MARKETING_FRONT}
+    ports: ["3007:3007"]
+    environment: { PORTA: "3007" }
+
+  landing:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_LANDING}
+    depends_on: *depende-da-infra
+    ports: ["8088:8088"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8088"
+      DB_APP_USER: usr_landing
+      DB_APP_PASSWORD: ${DB_APP_LANDING_SENHA}
+      DB_OWNER_USER: own_landing
+      DB_OWNER_PASSWORD: ${DB_OWN_LANDING_SENHA}
+      RABBITMQ_USER: mq_landing
+      RABBITMQ_PASSWORD: ${MQ_LANDING_SENHA}
+      SVC_CLIENT_ID: landing
+      SVC_CLIENT_SECRET: ${SVC_LANDING_SEGREDO}
+
+  landing-front:
+    <<: *servico
+    profiles: [modulos]
+    image: ${IMAGEM_LANDING_FRONT}
+    ports: ["3008:3008"]
+    environment: { PORTA: "3008" }
+
+  # ------------------------------------------------------------------ módulo de exemplo
+
+  exemplo:
+    <<: *servico
+    profiles: [exemplo]
+    build: ./exemplo-modulo/api
+    depends_on: *depende-da-infra
+    ports: ["8090:8090"]
+    environment:
+      <<: *env-modulo
+      SERVER_PORT: "8090"
+      DB_APP_USER: usr_exemplo
+      DB_APP_PASSWORD: ${DB_APP_EXEMPLO_SENHA}
+      DB_OWNER_USER: own_exemplo
+      DB_OWNER_PASSWORD: ${DB_OWN_EXEMPLO_SENHA}
+      RABBITMQ_USER: mq_exemplo
+      RABBITMQ_PASSWORD: ${MQ_EXEMPLO_SENHA}
+      SVC_CLIENT_ID: exemplo
+      SVC_CLIENT_SECRET: ${SVC_EXEMPLO_SEGREDO}
+
+  exemplo-front:
+    <<: *servico
+    profiles: [exemplo]
+    build: ./exemplo-modulo/front
+    ports: ["3090:3090"]
+    environment: { PORTA: "3090" }
+
+networks:
+  plataforma:
+    name: plataforma
+
+volumes:
+  pgdata:
+  rabbitmqdata:

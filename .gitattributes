@@ -1,0 +1,6 @@
+# Scripts rodam dentro de containers Linux: fim de linha LF sempre,
+# mesmo quando o repositório é clonado no Windows.
+* text=auto eol=lf
+*.jar binary
+*.png binary
+*.jpg binary

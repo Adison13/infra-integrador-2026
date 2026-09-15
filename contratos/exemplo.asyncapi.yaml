@@ -1,0 +1,79 @@
+asyncapi: 3.0.0
+info:
+  title: Exemplo — eventos publicados
+  version: 0.1.0
+  description: |
+    Eventos que o módulo de exemplo publica na exchange `exemplo.eventos`. Copie como ponto
+    de partida do seu. Documente só o que o **seu** módulo publica: quem consome cria a
+    própria fila e a liga à sua exchange (Contrato §9.7).
+
+    O módulo de exemplo também consome `contratos.contrato.assinado`, pela fila
+    `exemplo.contrato-assinado`, para mostrar um consumidor idempotente.
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  eventos:
+    address: exemplo.eventos
+    messages:
+      itemCriado:
+        $ref: '#/components/messages/ItemCriado'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: exemplo.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  publicarItemCriado:
+    action: send
+    summary: Um item foi criado
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/itemCriado'
+
+components:
+  messages:
+    ItemCriado:
+      name: exemplo.item.criado
+      title: Item criado
+      summary: Publicado depois do commit da criação.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: exemplo.item.criado }
+              dados:
+                type: object
+                required: [itemId, nome]
+                properties:
+                  itemId: { type: string, format: uuid }
+                  nome: { type: string }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string }
+        versao: { type: integer, minimum: 1 }
+        tenantId: { type: string, format: uuid }
+        moduloOrigem: { type: string }
+        ocorridoEm: { type: string, format: date-time }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        correlacaoId: { type: [string, 'null'] }
+        dados: { type: object }
