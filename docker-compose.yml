@@ -88,6 +88,9 @@ services:
     image: ${IMAGEM_IDENTITY}
     depends_on: *depende-da-infra
     ports: ["8081:8081"]
+    volumes:
+      - ./permissoes:/config/permissoes:ro
+      - ./modulos:/config/modulos:ro
     environment:
       <<: *env-modulo
       SERVER_PORT: "8081"
