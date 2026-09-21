@@ -4,8 +4,9 @@ O que é de todos os oito grupos do Projeto Integrador 2026: o ambiente que sobe
 inteiro, o banco e o broker já configurados, os contratos entre módulos, o tema visual e um
 módulo de exemplo para copiar.
 
-Mantido pelo Grupo 2 — Plataforma e Controle de Usuários. As regras vêm do **Contrato de
-Integração dos Módulos v0.6**; este repositório é a forma executável delas.
+Mantido pelo Grupo 2 — Plataforma e Controle de Usuários. As regras vêm do
+**[Contrato de Integração dos Módulos](docs/contrato-de-integracao.md)**; este repositório é
+a forma executável delas.
 
 ## O que tem aqui
 
@@ -19,7 +20,7 @@ Integração dos Módulos v0.6**; este repositório é a forma executável delas
 | `modulos/` | Registro de cada módulo no menu da casca | Cada grupo, por PR |
 | `ui/` | Tema Tailwind v4 + shadcn/ui da plataforma | Grupo 2 |
 | `exemplo-modulo/` | Back-end e front de um módulo pronto, para copiar | Grupo 2 |
-| `docs/` | Usuários de teste e checklist de conformidade | Grupo 2 |
+| `docs/` | Contrato de Integração, Mapa de Fronteiras, usuários de teste e checklist de conformidade | Grupo 2; o Contrato e o Mapa mudam por PR aprovado pelos gestores |
 | `.github/workflows/` | Validação deste repositório e workflow reutilizável de publicação de imagem | Grupo 2 |
 
 ## Subir o ambiente
@@ -111,7 +112,17 @@ Enquanto o identity não estiver publicado, desenvolva contra os contratos com o
 
 ## Documentos
 
-- Contrato de Integração dos Módulos v0.6
+- [Contrato de Integração dos Módulos](docs/contrato-de-integracao.md) — as regras que todo
+  módulo segue
+- [Mapa de Fronteiras](docs/mapa-de-fronteiras.md) — o que é de cada grupo, o que é
+  compartilhado e o que ainda não tem dono
+
+Estes dois arquivos são a versão oficial. Qualquer mudança entra por *pull request* e vale
+depois que os gestores dos grupos aprovam o PR — é assim que uma versão nova do Contrato é
+ratificada. O histórico do Git mostra o que mudou em cada versão.
+
+Documentos do Grupo 2, sobre a própria plataforma:
+
 - Requisitos da Plataforma e do Controle de Usuários v0.2
 - Modelo de Dados da Plataforma v0.2
 - Repositório da plataforma: [plataforma-integrador-2026-2](https://github.com/karolAlbuquerque/plataforma-integrador-2026-2)
