@@ -1004,9 +1004,11 @@ services:
 
   crm:                                    # não é o CRM real
     image: stoplight/prism:5
-    command: mock -h 0.0.0.0 -p 8082 /specs/crm.yaml
+    command: mock -m false -h 0.0.0.0 -p 8082 /specs/crm.yaml
     volumes: ["../infra-integrador-2026/contratos/crm.yaml:/specs/crm.yaml:ro"]
 ```
+
+O `-m false` desliga o modo multiprocesso do Prism, que não funciona com o Node da imagem `stoplight/prism:5`: sem ele, o container sai com erro logo ao subir.
 
 O Prism responde com dados de exemplo válidos segundo o schema. A vantagem sobre um mock escrito à mão é que este não envelhece calado: se o dono mudar o contrato, o stub muda junto.
 
@@ -1130,4 +1132,5 @@ Assim o Grupo 3 constrói relatórios sem depender de sete serviços estarem no 
 
 Contrato de Integração dos Módulos · versão 0.6 · 14 de setembro de 2026 · versão 0.5 ratificada por 4 de 8 grupos  
 Grupo 2 — Plataforma e Controle de Usuários · Projeto Integrador 2026  
-Requisitos derivados do Prompt Mestre do cliente, seções 3, 84 a 92, 105 e 116.
+Requisitos derivados do Prompt Mestre do cliente, seções 3, 84 a 92, 105 e 116.  
+Correção em 21 de setembro de 2026: comando do Prism na seção 14.2 (`-m false`).
