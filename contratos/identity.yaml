@@ -1,11 +1,21 @@
 openapi: 3.1.0
 info:
   title: Identity — Plataforma e Controle de Usuários
-  version: 0.1.0
+  version: 0.2.0
   summary: Endpoints do serviço de identidade consumidos pela casca e pelos outros módulos.
   description: |
-    Contrato da onda 1 do Grupo 2. As regras gerais estão no Contrato de Integração v0.6:
+    Contrato das ondas 1 e 2 do Grupo 2. As regras gerais estão no Contrato de Integração:
     autenticação (§4), autorização e equipes (§5), API (§8) e comunicação entre módulos (§9).
+
+    A onda 2 acrescenta convite e recuperação de senha, troca de senha, sessões ativas,
+    "minha conta" e a administração de usuários, perfis e equipes. Essas rotas de administração
+    existem para a casca; os módulos continuam lendo tudo do token (Contrato §5.2).
+
+    Códigos de regra de negócio (422) e de conflito (409) vêm em `errors[].codigo`:
+    `EMAIL_EM_USO`, `NOME_EM_USO`, `SENHA_FRACA`, `SENHA_ATUAL_INCORRETA`, `LINK_INVALIDO`,
+    `AUTOPROTECAO`, `ULTIMO_ADMINISTRADOR`, `PERMISSAO_NAO_CONCEDIVEL`, `PERFIL_INEXISTENTE`,
+    `EQUIPE_INEXISTENTE`, `USUARIO_INEXISTENTE`, `PERMISSAO_INEXISTENTE`, `PERFIL_DE_SISTEMA`,
+    `PERFIL_EM_USO`, `USUARIO_INATIVO`, `CONVITE_DESNECESSARIO`.
 
     Toda resposta usa o envelope `{ success, data, message, errors }`, com uma exceção:
     o JWKS segue o formato padrão da RFC 7517, para que o Spring o leia sem configuração.
@@ -27,6 +37,16 @@ servers:
 tags:
   - name: autenticacao
     description: Login, renovação e encerramento de sessão
+  - name: senha
+    description: Convite, recuperação e troca de senha
+  - name: conta
+    description: Dados e sessões do próprio usuário
+  - name: usuarios
+    description: Administração de usuários (casca)
+  - name: perfis
+    description: Perfis e o catálogo de permissões (casca)
+  - name: equipes
+    description: Equipes de usuários
   - name: servico
     description: Token para rotinas sem usuário
   - name: chaves
@@ -157,6 +177,201 @@ paths:
                       data: { $ref: '#/components/schemas/TokenDeServico' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
 
+  /api/identity/auth/senha/recuperar:
+    post:
+      tags: [senha]
+      operationId: pedirRecuperacaoDeSenha
+      summary: Pedir o link de recuperação de senha por e-mail
+      description: |
+        Responde sempre 200, com a mesma mensagem e no mesmo tempo, exista o e-mail ou não. O
+        link vale 30 minutos e é de uso único. Pedidos repetidos para o mesmo e-mail ou do mesmo
+        IP são ignorados em silêncio além de um limite (a resposta não muda).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PedidoDeRecuperacao' }
+      responses:
+        '200':
+          description: Pedido recebido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: null, message: 'Se o e-mail estiver cadastrado, enviaremos um link em instantes.', errors: [] }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+
+  /api/identity/auth/senha/verificar:
+    post:
+      tags: [senha]
+      operationId: verificarLinkDeSenha
+      summary: Conferir um link de convite ou de recuperação antes de mostrar o formulário
+      description: |
+        O token vai no corpo, nunca na URL: a casca o lê do fragmento (`/definir-senha#token=…`),
+        que o navegador não envia ao servidor. Não consome o token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TokenDeSenha' }
+      responses:
+        '200':
+          description: Link válido
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/LinkDeSenha' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/auth/senha/definir:
+    post:
+      tags: [senha]
+      operationId: definirSenha
+      summary: Definir a senha pelo link de convite ou de recuperação
+      description: |
+        Consome o token, cancela os outros links pendentes do usuário e encerra todas as sessões
+        abertas. Não abre sessão: a pessoa entra em seguida pela tela de login.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DefinicaoDeSenha' }
+      responses:
+        '200':
+          description: Senha definida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/auth/senha:
+    post:
+      tags: [senha]
+      operationId: trocarSenha
+      summary: Trocar a própria senha
+      description: |
+        Exige a senha atual, mesmo com a sessão válida. Mantém só a sessão do cookie que fez a
+        troca e encerra as demais. Cinco senhas atuais erradas em 15 minutos bloqueiam como no
+        login (429).
+      security:
+        - bearerJwt: []
+          cookieRefresh: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrocaDeSenha' }
+      responses:
+        '200':
+          description: Senha trocada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+        '429': { $ref: '#/components/responses/MuitasTentativas' }
+
+  /api/identity/auth/sessoes:
+    get:
+      tags: [conta]
+      operationId: listarMinhasSessoes
+      summary: Sessões abertas do próprio usuário
+      description: A sessão do cookie desta requisição vem marcada com `atual`.
+      security:
+        - bearerJwt: []
+          cookieRefresh: []
+      responses:
+        '200':
+          description: Sessões
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Sessao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+    delete:
+      tags: [conta]
+      operationId: encerrarOutrasSessoes
+      summary: Encerrar todas as sessões, menos a atual
+      security:
+        - bearerJwt: []
+          cookieRefresh: []
+      responses:
+        '200':
+          description: Sessões encerradas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/auth/sessoes/{id}:
+    delete:
+      tags: [conta]
+      operationId: encerrarSessao
+      summary: Encerrar uma sessão do próprio usuário
+      description: A próxima renovação daquele dispositivo falha. Sessão de outro usuário responde 404.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Sessão encerrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/identity/conta:
+    get:
+      tags: [conta]
+      operationId: minhaConta
+      summary: Dados do próprio usuário
+      responses:
+        '200':
+          description: Conta
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Conta' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+    put:
+      tags: [conta]
+      operationId: editarMinhaConta
+      summary: Editar nome e telefone
+      description: E-mail, perfis e equipes não mudam por aqui — só por um administrador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EdicaoDeConta' }
+      responses:
+        '200':
+          description: Conta atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Conta' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
   /api/identity/.well-known/jwks.json:
     get:
       tags: [chaves]
@@ -189,6 +404,504 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/ModuloDoMenu' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/usuarios:
+    get:
+      tags: [usuarios]
+      operationId: listarUsuarios
+      summary: Usuários do tenant, com busca, filtros e ordenação
+      description: Exige `identity.usuario.ver`. Nunca traz usuário de outro tenant (RF17).
+      parameters:
+        - name: busca
+          in: query
+          description: Trecho do nome ou do e-mail
+          schema: { type: string, maxLength: 100 }
+        - name: perfilId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: situacao
+          in: query
+          schema: { $ref: '#/components/schemas/SituacaoDoUsuario' }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: ordenar
+          in: query
+          description: Campo e direção
+          schema:
+            type: string
+            enum: ['nome,asc', 'nome,desc', 'email,asc', 'email,desc', 'ultimoLoginEm,asc', 'ultimoLoginEm,desc', 'criadoEm,asc', 'criadoEm,desc']
+            default: 'nome,asc'
+      responses:
+        '200':
+          description: Página de usuários
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/UsuarioDaLista' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [usuarios]
+      operationId: cadastrarUsuario
+      summary: Cadastrar usuário e enviar o convite de primeiro acesso
+      description: |
+        Exige `identity.usuario.administrar`. O usuário nasce sem senha e define a própria pelo
+        link do convite, válido por 72 horas (RF13, RF14). Só se atribui perfil cujas permissões
+        quem cadastra já tem (`PERMISSAO_NAO_CONCEDIVEL`). `conviteEnviado` é falso quando o
+        SMTP falhou — o cadastro vale e o convite pode ser reenviado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CadastroDeUsuario' }
+      responses:
+        '201':
+          description: Usuário cadastrado
+          headers:
+            Location:
+              schema: { type: string, example: /api/identity/usuarios/9f1c4e2a-6b1d-4c1e-9a55-2d3e4f5a6b7c }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/UsuarioSalvo' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/usuarios/{id}:
+    get:
+      tags: [usuarios]
+      operationId: detalharUsuario
+      summary: Um usuário, com perfis, equipes e convite pendente
+      description: Exige `identity.usuario.ver`.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Usuário
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/UsuarioDetalhe' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [usuarios]
+      operationId: editarUsuario
+      summary: Editar dados, perfis e equipes
+      description: |
+        Exige `identity.usuario.administrar`. Perfil retirado deixa de valer na próxima renovação
+        do token (RF15). Não se altera os próprios perfis (`AUTOPROTECAO`) nem se deixa o tenant sem
+        administrador (`ULTIMO_ADMINISTRADOR`). Trocar o e-mail de quem tem convite pendente
+        reenvia o convite para o endereço novo.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CadastroDeUsuario' }
+      responses:
+        '200':
+          description: Usuário atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/UsuarioSalvo' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/usuarios/{id}/desativar:
+    post:
+      tags: [usuarios]
+      operationId: desativarUsuario
+      summary: Desativar usuário (nunca excluir)
+      description: |
+        Exige `identity.usuario.administrar`. Bloqueia o login na hora, encerra as sessões e
+        cancela o convite pendente (RF16). O histórico e a autoria dos registros continuam.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200': { $ref: '#/components/responses/UsuarioSalvo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/usuarios/{id}/reativar:
+    post:
+      tags: [usuarios]
+      operationId: reativarUsuario
+      summary: Reativar usuário
+      description: Exige `identity.usuario.administrar`. Quem nunca definiu senha recebe um convite novo.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200': { $ref: '#/components/responses/UsuarioSalvo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/usuarios/{id}/convite:
+    post:
+      tags: [usuarios]
+      operationId: reenviarConvite
+      summary: Reenviar o convite de primeiro acesso
+      description: |
+        Exige `identity.usuario.administrar`. Cancela o convite anterior. Usuário que já definiu
+        senha (`CONVITE_DESNECESSARIO`) ou inativo (`USUARIO_INATIVO`) responde 422.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200': { $ref: '#/components/responses/UsuarioSalvo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/permissoes:
+    get:
+      tags: [perfis]
+      operationId: listarCatalogoDePermissoes
+      summary: Catálogo global de permissões, agrupado por módulo
+      description: |
+        Exige `identity.perfil.ver`. Alimenta a matriz de montagem de perfis (RF22). É a única
+        listagem sem paginação: o catálogo é global, limitado e precisa aparecer inteiro numa tela.
+      responses:
+        '200':
+          description: Catálogo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/PermissoesDoModulo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/identity/perfis:
+    get:
+      tags: [perfis]
+      operationId: listarPerfis
+      summary: Perfis do tenant
+      description: Exige `identity.perfil.ver` ou `identity.usuario.administrar` (para o formulário de usuário).
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - name: tamanho
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+      responses:
+        '200':
+          description: Página de perfis — os de sistema primeiro, depois por nome
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/PerfilResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [perfis]
+      operationId: criarPerfil
+      summary: Criar perfil personalizado
+      description: |
+        Exige `identity.perfil.administrar`. Só entram permissões que quem cria já tem
+        (`PERMISSAO_NAO_CONCEDIVEL`). Nome único no tenant, sem diferença de maiúsculas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CadastroDePerfil' }
+      responses:
+        '201':
+          description: Perfil criado
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PerfilDetalhe' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/perfis/{id}:
+    get:
+      tags: [perfis]
+      operationId: detalharPerfil
+      summary: Um perfil e as suas permissões
+      description: Exige `identity.perfil.ver`.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Perfil
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PerfilDetalhe' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [perfis]
+      operationId: editarPerfil
+      summary: Editar nome, descrição e permissões, numa gravação só
+      description: |
+        Exige `identity.perfil.administrar`. A lista de permissões substitui a anterior; a
+        diferença vai para a auditoria (RF26). Perfil de sistema não muda de nome
+        (`PERFIL_DE_SISTEMA`). Mudança que deixe o tenant sem administrador é recusada
+        (`ULTIMO_ADMINISTRADOR`). Vale na próxima renovação do token de quem tem o perfil.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CadastroDePerfil' }
+      responses:
+        '200':
+          description: Perfil atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PerfilDetalhe' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+    delete:
+      tags: [perfis]
+      operationId: excluirPerfil
+      summary: Excluir perfil personalizado sem usuários
+      description: |
+        Exige `identity.perfil.administrar`. Perfil de sistema (`PERFIL_DE_SISTEMA`) e perfil
+        com usuários (`PERFIL_EM_USO`) não são excluídos.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Perfil excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/perfis/{id}/duplicar:
+    post:
+      tags: [perfis]
+      operationId: duplicarPerfil
+      summary: Criar um perfil personalizado a partir de outro
+      description: Exige `identity.perfil.administrar`. Copia as permissões; a cópia nunca é de sistema.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome]
+              properties:
+                nome: { type: string, minLength: 1, maxLength: 60, example: Vendedor sênior }
+      responses:
+        '201':
+          description: Cópia criada
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PerfilDetalhe' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/equipes:
+    get:
+      tags: [equipes]
+      operationId: listarEquipes
+      summary: Equipes do tenant
+      description: Exige `identity.equipe.ver_resumo` — os módulos usam para filtros por equipe.
+      parameters:
+        - name: busca
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de equipes, em ordem de nome
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/EquipeResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [equipes]
+      operationId: criarEquipe
+      summary: Criar equipe com membros e líderes
+      description: Exige `identity.equipe.administrar`. Quem entra passa a ter a equipe no token na próxima renovação (RF57).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CadastroDeEquipe' }
+      responses:
+        '201':
+          description: Equipe criada
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/EquipeDetalhe' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/equipes/{id}:
+    get:
+      tags: [equipes]
+      operationId: detalharEquipe
+      summary: Uma equipe e os seus membros
+      description: Exige `identity.equipe.ver_resumo`.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Equipe
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/EquipeDetalhe' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [equipes]
+      operationId: editarEquipe
+      summary: Renomear e trocar membros e líderes
+      description: Exige `identity.equipe.administrar`. A lista de membros substitui a anterior.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CadastroDeEquipe' }
+      responses:
+        '200':
+          description: Equipe atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/EquipeDetalhe' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+    delete:
+      tags: [equipes]
+      operationId: excluirEquipe
+      summary: Excluir equipe
+      description: |
+        Exige `identity.equipe.administrar`. Exclusão lógica: a equipe sai do token dos membros na
+        próxima renovação; registros de módulos que guardam o `equipe_id` continuam com o UUID.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Equipe excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
 
   /api/identity/equipes/{id}/membros:
     get:
@@ -333,6 +1046,37 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Envelope' }
           example: { success: false, data: null, message: Muitas tentativas. Aguarde 15 minutos., errors: [] }
+    Conflito:
+      description: Duplicidade — e-mail já usado por outro usuário não excluído, ou nome já usado no tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Este e-mail já está em uso.
+            errors:
+              - { campo: email, codigo: EMAIL_EM_USO, detalhe: Este e-mail já está em uso. }
+    RegraDeNegocio:
+      description: Bem formado, mas viola uma regra; o código está em `errors[].codigo`
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: O tenant ficaria sem administrador.
+            errors:
+              - { campo: perfis, codigo: ULTIMO_ADMINISTRADOR, detalhe: O tenant ficaria sem administrador. }
+    UsuarioSalvo:
+      description: Usuário depois da operação
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data: { $ref: '#/components/schemas/UsuarioSalvo' }
 
   schemas:
     Envelope:
@@ -494,3 +1238,271 @@ components:
             status: { type: string, example: UP }
         message: { type: [string, 'null'] }
         errors: { type: array, items: {} }
+
+    # ---------------------------------------------------------------- onda 2: senha e conta
+
+    SenhaNova:
+      type: string
+      format: password
+      minLength: 8
+      maxLength: 72
+      description: Oito caracteres ou mais, com letra e número; até 72 bytes em UTF-8 (limite do BCrypt). Nunca volta em resposta nem em log (RF09).
+
+    PedidoDeRecuperacao:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+
+    TokenDeSenha:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, maxLength: 100, description: Valor lido do fragmento do link }
+
+    LinkDeSenha:
+      type: object
+      required: [tipo, nome, email, expiraEm]
+      properties:
+        tipo: { type: string, enum: [convite, recuperacao] }
+        nome: { type: string, example: Maria Souza }
+        email: { type: string, format: email }
+        expiraEm: { type: string, format: date-time }
+
+    DefinicaoDeSenha:
+      type: object
+      required: [token, novaSenha]
+      properties:
+        token: { type: string, maxLength: 100 }
+        novaSenha: { $ref: '#/components/schemas/SenhaNova' }
+
+    TrocaDeSenha:
+      type: object
+      required: [senhaAtual, novaSenha]
+      properties:
+        senhaAtual: { type: string, format: password, maxLength: 72 }
+        novaSenha: { $ref: '#/components/schemas/SenhaNova' }
+
+    Sessao:
+      type: object
+      required: [id, iniciadaEm, ultimaRenovacaoEm, expiraEm, atual]
+      properties:
+        id: { type: string, format: uuid, description: 'Identificador da sessão, estável entre renovações' }
+        ip: { type: [string, 'null'], example: 203.0.113.7 }
+        navegador: { type: [string, 'null'], example: Chrome no Windows }
+        iniciadaEm: { type: string, format: date-time }
+        ultimaRenovacaoEm: { type: string, format: date-time }
+        expiraEm: { type: string, format: date-time }
+        atual: { type: boolean, description: É a sessão do cookie desta requisição }
+
+    Conta:
+      type: object
+      required: [id, nome, email, tenant, perfis, equipes]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        email: { type: string, format: email }
+        telefone: { type: [string, 'null'] }
+        tenant:
+          type: object
+          required: [id, nome]
+          properties:
+            id: { type: string, format: uuid }
+            nome: { type: string, example: Centinela Soluções }
+        perfis:
+          type: array
+          items: { $ref: '#/components/schemas/PerfilDoUsuario' }
+        equipes:
+          type: array
+          items: { $ref: '#/components/schemas/EquipeDoUsuario' }
+        ultimoLoginEm: { type: [string, 'null'], format: date-time }
+        criadoEm: { type: string, format: date-time }
+
+    EdicaoDeConta:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 120 }
+        telefone: { $ref: '#/components/schemas/Telefone' }
+
+    Telefone:
+      type: [string, 'null']
+      maxLength: 20
+      pattern: '^[0-9()+\- ]{8,20}$'
+      example: (62) 99999-0000
+
+    # ---------------------------------------------------------------- onda 2: usuários
+
+    SituacaoDoUsuario:
+      type: string
+      enum: [ativo, convite_pendente, convite_expirado, inativo]
+      description: |
+        `ativo` já definiu senha; `convite_pendente` e `convite_expirado` ainda não, com convite
+        válido ou vencido; `inativo` foi desativado.
+
+    PerfilDoUsuario:
+      type: object
+      required: [id, nome, rotulo, sistema]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, example: PRE_VENDAS, description: Valor que vai no claim roles }
+        rotulo: { type: string, example: Pré-vendas }
+        sistema: { type: boolean }
+
+    EquipeDoUsuario:
+      type: object
+      required: [id, nome, lider]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, example: Comercial }
+        lider: { type: boolean }
+
+    UsuarioDaLista:
+      type: object
+      required: [id, nome, email, situacao, perfis, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        email: { type: string, format: email }
+        telefone: { type: [string, 'null'] }
+        situacao: { $ref: '#/components/schemas/SituacaoDoUsuario' }
+        perfis:
+          type: array
+          items: { $ref: '#/components/schemas/PerfilDoUsuario' }
+        ultimoLoginEm: { type: [string, 'null'], format: date-time }
+        criadoEm: { type: string, format: date-time }
+
+    UsuarioDetalhe:
+      allOf:
+        - $ref: '#/components/schemas/UsuarioDaLista'
+        - type: object
+          required: [equipes]
+          properties:
+            equipes:
+              type: array
+              items: { $ref: '#/components/schemas/EquipeDoUsuario' }
+            conviteExpiraEm:
+              type: [string, 'null']
+              format: date-time
+              description: Validade do convite pendente, se houver
+
+    CadastroDeUsuario:
+      type: object
+      required: [nome, email, perfis]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 120, example: Maria Souza }
+        email: { type: string, format: email, maxLength: 254, example: maria@centinela.com.br }
+        telefone: { $ref: '#/components/schemas/Telefone' }
+        perfis:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        equipes:
+          type: array
+          uniqueItems: true
+          description: Equipes de que participa. Quem já era membro continua com a marcação de líder; quem entra, entra como membro comum.
+          items: { type: string, format: uuid }
+
+    UsuarioSalvo:
+      type: object
+      required: [usuario, conviteEnviado]
+      properties:
+        usuario: { $ref: '#/components/schemas/UsuarioDetalhe' }
+        conviteEnviado:
+          type: [boolean, 'null']
+          description: Nulo quando a operação não envolveu convite; falso quando o e-mail não pôde ser enviado
+
+    # ---------------------------------------------------------------- onda 2: perfis e equipes
+
+    PermissaoDoCatalogo:
+      type: object
+      required: [codigo, recurso, acao, descricao]
+      properties:
+        codigo: { type: string, example: crm.oportunidade.editar }
+        recurso: { type: string, example: oportunidade, description: 'É "modulo" em {modulo}.acessar' }
+        acao: { type: string, example: editar }
+        descricao: { type: string }
+
+    PermissoesDoModulo:
+      type: object
+      required: [modulo, nome, permissoes]
+      properties:
+        modulo: { type: string, example: crm }
+        nome: { type: string, example: CRM, description: 'Nome do registro do módulo, ou o código se não houver registro' }
+        permissoes:
+          type: array
+          items: { $ref: '#/components/schemas/PermissaoDoCatalogo' }
+
+    PerfilResumo:
+      type: object
+      required: [id, nome, rotulo, sistema, totalUsuarios, totalPermissoes]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, example: VENDEDOR }
+        rotulo: { type: string, example: Vendedor }
+        descricao: { type: [string, 'null'] }
+        sistema: { type: boolean, description: Um dos dez perfis iniciais; não exclui nem muda de nome }
+        totalUsuarios: { type: integer }
+        totalPermissoes: { type: integer }
+
+    PerfilDetalhe:
+      type: object
+      required: [id, nome, rotulo, sistema, totalUsuarios, permissoes]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        rotulo: { type: string }
+        descricao: { type: [string, 'null'] }
+        sistema: { type: boolean }
+        totalUsuarios: { type: integer }
+        permissoes:
+          type: array
+          items: { type: string, example: crm.oportunidade.ver }
+
+    CadastroDePerfil:
+      type: object
+      required: [nome, permissoes]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 60, example: Vendedor sênior }
+        descricao: { type: [string, 'null'], maxLength: 300 }
+        permissoes:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+
+    EquipeResumo:
+      type: object
+      required: [id, nome, totalMembros, lideres]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, example: Comercial }
+        totalMembros: { type: integer }
+        lideres:
+          type: array
+          items: { type: string, example: Gestor da Empresa A }
+
+    EquipeDetalhe:
+      type: object
+      required: [id, nome, membros]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        membros:
+          type: array
+          description: Sem e-mail — `identity.equipe.ver_resumo` é dado a quase todos os perfis operacionais.
+          items: { $ref: '#/components/schemas/MembroDeEquipe' }
+
+    CadastroDeEquipe:
+      type: object
+      required: [nome, membros]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 80, example: Comercial }
+        membros:
+          type: array
+          items:
+            type: object
+            required: [usuarioId, lider]
+            properties:
+              usuarioId: { type: string, format: uuid }
+              lider: { type: boolean }

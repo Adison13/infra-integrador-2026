@@ -35,6 +35,19 @@ O e-mail segue `{perfil}@empresa-a.dev` ou `{perfil}@empresa-b.dev`:
 Cada usuário recebe as permissões marcadas com o seu perfil em `perfisPadrao`, nas listas de
 [permissoes/](../permissoes). Permissão nova no arquivo passa a valer na próxima subida do identity.
 
+## Equipes
+
+Uma equipe "Comercial" em cada tenant, para testar o recorte "gestor vê a equipe" (Contrato §5.4).
+O id da equipe chega no claim `equipes` do token de cada membro.
+
+| Tenant | id da equipe | Membros |
+|---|---|---|
+| Empresa A | `a0000000-0000-4000-8000-0000000000e1` | gestor (líder), vendedor, pré-vendas |
+| Empresa B | `b0000000-0000-4000-8000-0000000000e1` | gestor (líder), vendedor, pré-vendas |
+
+Para listar os membros: `GET /api/identity/equipes/{id}/membros`, com a permissão
+`identity.equipe.ver_resumo`.
+
 ## Obter um token
 
 ```bash

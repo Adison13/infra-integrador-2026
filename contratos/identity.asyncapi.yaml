@@ -187,8 +187,15 @@ components:
           format: email
         modelo:
           type: string
-          description: Nome do modelo cadastrado na plataforma
-          examples: [cobranca-vencida]
+          maxLength: 100
+          description: |
+            `{modulo}.{nome}`: o modelo `emails/{modulo}/{nome}.txt` deste repositório, entregue
+            por PR como o catálogo de permissões. O `{modulo}` precisa ser o `moduloOrigem` da
+            mensagem, e os modelos `identity.*` são internos (convite e senha) — pedi-los é recusado.
+            Toda variável `{{nome}}` do modelo precisa vir em `variaveis`; faltando alguma, a
+            mensagem vai para a `.dlq`. Nome sem ponto usa o formato genérico da onda 1: assunto na
+            variável `assunto`, corpo em `mensagem` e as demais variáveis listadas abaixo dele.
+          examples: [financeiro.cobranca-vencida]
         variaveis:
           type: object
-          additionalProperties: { type: string }
+          additionalProperties: { type: string, maxLength: 2000 }
