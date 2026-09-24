@@ -33,7 +33,7 @@ paths:
       description: |
         Exige `crm.empresa.ver` — devolve o cadastro completo (vendedor, status comercial,
         segmento, porte). Quem só tem `crm.empresa.ver_resumo` usa `/empresas/resumo` ou
-        `/empresas/busca` (Contrato §9.3).
+        `/busca` (Contrato §9.3).
       parameters:
         - $ref: '#/components/parameters/Pagina'
         - $ref: '#/components/parameters/Tamanho'
@@ -102,15 +102,16 @@ paths:
                 errors:
                   - { campo: cnpj, codigo: EMPRESA_DUPLICADA, detalhe: CNPJ já cadastrado para este tenant. }
 
-  /api/crm/empresas/busca:
+  /api/crm/busca:
     get:
       tags: [empresas]
-      operationId: buscarEmpresas
-      summary: Busca textual, para a busca global da casca
+      operationId: buscaGlobal
+      summary: Busca global do módulo, chamada em paralelo pela casca em todos os módulos
       description: |
         Exige `crm.empresa.ver_resumo`. Devolve no máximo 5 resultados, no formato único
-        do Contrato de Integração §8.6 (mesmo formato usado pelo módulo Chamados) — `rota`
-        é relativa ao `urlFrontend` do próprio módulo.
+        do Contrato de Integração §8.6 — mesmo caminho (`/api/{modulo}/busca?q=`) e mesmo
+        formato de resposta usados por todos os módulos. Hoje busca apenas em Empresas;
+        outras entidades do CRM entram aqui conforme forem publicadas.
       parameters:
         - name: q
           in: query
@@ -562,8 +563,8 @@ components:
 
     ResultadoBusca:
       type: object
-      required: [id, titulo, rota]
-      description: Formato único de busca global do sistema (Contrato §8.6).
+      required: [id, titulo, subtitulo, rota]
+      description: Formato único de busca global do sistema (Contrato §8.6). subtitulo sempre presente; string vazia quando a empresa não tem CNPJ.
       properties:
         id: { type: string, format: uuid }
         titulo: { type: string, example: Centinela Soluções Digitais }

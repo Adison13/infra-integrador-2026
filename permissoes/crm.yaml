@@ -16,6 +16,7 @@ permissoes:
   - codigo: crm.empresa.criar
     descricao: Criar empresa
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+    servicos: [landing]
 
   - codigo: crm.empresa.editar
     descricao: Editar empresa — único módulo autorizado a editar (Contrato §10.2)
@@ -32,6 +33,7 @@ permissoes:
   - codigo: crm.contato.criar
     descricao: Criar contato
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+    servicos: [landing]
 
   - codigo: crm.contato.editar
     descricao: Editar contato
