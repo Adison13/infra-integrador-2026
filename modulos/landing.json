@@ -6,7 +6,7 @@
   "urlFrontend": "/modulos/landing/",
   "prefixoApi": "/api/landing",
   "permissaoMenu": "landing.acessar",
-  "ordemMenu": 70,
+  "ordemMenu": 80,
   "healthcheck": "/api/landing/health",
   "itensSubmenu": [
     { "rota": "/envios", "nome": "Envios", "permissao": "landing.envio.ver" }
