@@ -982,6 +982,9 @@ paths:
       responses:
         '201':
           description: Atividade registrada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/atividades/5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e }
           content:
             application/json:
               schema:
@@ -1067,6 +1070,9 @@ paths:
       responses:
         '201':
           description: Tarefa criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/tarefas/6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f }
           content:
             application/json:
               schema:
@@ -1239,6 +1245,9 @@ paths:
       responses:
         '201':
           description: Reunião agendada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/reunioes/7d8e9f0a-1b2c-4d3e-8f4a-5b6c7d8e9f0a }
           content:
             application/json:
               schema:
@@ -1367,6 +1376,9 @@ paths:
       responses:
         '201':
           description: Objeção registrada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/objecoes/8e9f0a1b-2c3d-4e4f-9a5b-6c7d8e9f0a1b }
           content:
             application/json:
               schema:
