@@ -1206,8 +1206,8 @@ components:
         unidadeId: { type: [string, 'null'], format: uuid }
         tipo: { type: string, enum: [nova, upsell, cross_sell], default: nova }
         produtoId: { type: [string, 'null'], format: uuid, description: 'Produto do Grupo 1, sem validação local' }
-        valorImplantacao: { type: [number, 'null'], minimum: 0, example: 1500.00 }
-        valorMrr: { type: [number, 'null'], minimum: 0, example: 890.00 }
+        valorImplantacao: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, example: 1500.00, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
+        valorMrr: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, example: 890.00, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
         probabilidade: { type: [integer, 'null'], minimum: 0, maximum: 100 }
         dataPrevistaFechamento: { type: [string, 'null'], format: date }
         proximoPasso: { type: string, minLength: 1, maxLength: 255, example: Apresentar o resultado do diagnóstico }
@@ -1228,8 +1228,8 @@ components:
         etapaId: { type: [string, 'null'], format: uuid, description: 'Sem ela, primeira etapa do funil padrão' }
         tipo: { type: string, enum: [nova, upsell, cross_sell], default: nova }
         produtoId: { type: [string, 'null'], format: uuid }
-        valorImplantacao: { type: [number, 'null'], minimum: 0 }
-        valorMrr: { type: [number, 'null'], minimum: 0 }
+        valorImplantacao: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
+        valorMrr: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
         probabilidade: { type: [integer, 'null'], minimum: 0, maximum: 100 }
         dataPrevistaFechamento: { type: [string, 'null'], format: date }
         proximoPasso: { type: [string, 'null'], maxLength: 255 }
