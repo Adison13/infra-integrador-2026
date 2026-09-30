@@ -8,6 +8,7 @@
   "permissaoMenu": "crm.acessar",
   "ordemMenu": 20,
   "healthcheck": "/api/crm/health",
+  "busca": true,
   "itensSubmenu": [
     { "rota": "/empresas", "nome": "Empresas", "permissao": "crm.empresa.ver" },
     { "rota": "/contatos", "nome": "Contatos", "permissao": "crm.contato.ver" },

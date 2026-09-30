@@ -48,12 +48,17 @@ permissoes:
     perfisPadrao: [ADMINISTRADOR, GESTOR]
 
   - codigo: crm.oportunidade.ver
-    descricao: Ver oportunidades
+    descricao: Ver as próprias oportunidades, as das suas equipes e as ainda sem responsável
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+
+  - codigo: crm.oportunidade.ver_todas
+    descricao: Ver todas as oportunidades do tenant, sem o recorte por dono e equipe (Contrato §5.3)
+    perfisPadrao: [ADMINISTRADOR]
 
   - codigo: crm.oportunidade.criar
     descricao: Criar oportunidade
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+    servicos: [landing]
 
   - codigo: crm.oportunidade.editar
     descricao: Editar oportunidade, incluindo mudança de etapa
