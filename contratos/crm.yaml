@@ -1092,9 +1092,10 @@ paths:
       operationId: editarTarefa
       summary: Editar descrição, responsável ou vencimento
       description: |
-        Exige `crm.oportunidade.editar`. Enxerga a tarefa quem é responsável por ela, quem a
-        criou, quem enxerga a oportunidade ligada ou quem tem `crm.oportunidade.ver_todas`;
-        os demais recebem 404.
+        Exige `crm.oportunidade.editar` ou, para o responsável pela tarefa, `crm.oportunidade.ver`:
+        assim o pré-vendas edita a própria tarefa, sem poder repassá-la a outra pessoa (403).
+        Enxerga a tarefa quem é responsável por ela, quem a criou, quem enxerga a oportunidade
+        ligada ou quem tem `crm.oportunidade.ver_todas`; os demais recebem 404.
       requestBody:
         required: true
         content:
@@ -1136,7 +1137,10 @@ paths:
       tags: [atividades]
       operationId: concluirTarefa
       summary: Marcar tarefa como concluída
-      description: Exige `crm.oportunidade.editar`. Tarefa já concluída responde 409 (`TAREFA_CONCLUIDA`).
+      description: |
+        Exige `crm.oportunidade.editar` ou, para o responsável pela tarefa, `crm.oportunidade.ver`
+        (o pré-vendas conclui a própria tarefa). Tarefa de outra pessoa sem `crm.oportunidade.editar`
+        responde 403. Tarefa já concluída responde 409 (`TAREFA_CONCLUIDA`).
       responses:
         '200':
           description: Tarefa concluída
@@ -1792,7 +1796,7 @@ components:
       properties:
         tipo: { type: string, enum: [ligacao, email, whatsapp, visita, outro] }
         descricao: { type: string, minLength: 1, maxLength: 2000, example: Conversa com o sócio sobre backup em nuvem }
-        realizadaEm: { type: [string, 'null'], format: date-time, description: 'Sem ela, o momento do registro' }
+        realizadaEm: { type: [string, 'null'], format: date-time, description: 'Sem ela, o momento do registro. Data futura responde 400 em realizadaEm: o que ainda vai acontecer é tarefa ou reunião' }
 
     Atividade:
       type: object
